@@ -1,0 +1,136 @@
+#include <unistd.h> // sbrk( )
+#include <limits.h> // LONG_MAX
+
+using namespace std;
+
+static bool initialized = false;
+static void *heap_top; // the beginning of the heap space
+static void *heap_end; // the current boundary of the heap space, obtained from sbrk( 0 )
+
+class MCB { // memory control block
+public:
+  int available; // true(1): this memory partition is available, false(0) unavailalbe.
+  int size;      // MCB size + the user data size
+};
+
+void free_( void *dealloc_space ) {
+  MCB *mcb;
+
+  // locate this partition's mcb address from dealloc_space
+  // long long int ensures 64x (bit) address
+  mcb = (MCB*)( (long long int) dealloc_space - sizeof(MCB) );
+
+  // setting the address of mcb to true essentially allows it to be overwritten on another pass
+  // effectively "freeing" the memory allocated to it
+  mcb->available = true;
+  return;
+}
+
+void *malloc_f( long size ) {
+  struct MCB *cur_mcb;          // current MCB
+  void *new_space = NULL; // this is a pointer to a new memory space allocated for a user
+
+  if( !initialized )   {
+    // find the end of heap memory, upon an initialization
+    heap_end = sbrk( 0 );
+    heap_top = heap_end;
+    initialized = true;
+  }
+
+  // append an MCB in front of a requested memroy space
+  size = size + sizeof( MCB );
+
+  // scan each mcb from the top to the bottom of the heap
+  //   let cur_mcb point to each mcb you are scanning
+  cur_mcb = (MCB*) heap_top;
+
+  while ( (void*) cur_mcb < heap_end ) {
+  // if cur_mcb->available and cur_mcb->size fits size, new_space points to this mcb
+      if ( cur_mcb->available && cur_mcb->size >=size ) {
+      new_space = (void*) cur_mcb;
+      // mark unavailable
+      cur_mcb->available = 0;
+      // break search when found
+      break;
+    }
+    // iterate to next MCB
+    cur_mcb = (MCB*) ( (long long int) cur_mcb + cur_mcb->size );
+  }
+
+  // no space found yet
+  if ( new_space == NULL ) {
+    // get a space from OS
+    sbrk( size );
+    // old boundary now becomes new_space, i.e. initialize new_space with heap_end
+    new_space = heap_end;
+    // heap_end will go down by size
+    heap_end = sbrk ( 0 );
+    // initialize cur_mcb with new_space and size.
+    cur_mcb = (MCB*)new_space;
+    cur_mcb->size = size;
+    // mark unavailable
+    cur_mcb->available = 0;
+
+  }
+
+  // new space is after new MCB
+  return (void *)( ( long long int )new_space + sizeof( MCB ) );
+}
+
+void *malloc_b( long size ) {
+  struct MCB *cur_mcb;          // current MCB
+  void *new_space = NULL; // this is a pointer to a new memory space allocated for a user
+
+  if( !initialized )   {
+    // find the end of heap memory, upon an initialization
+    heap_end = sbrk( 0 );
+    heap_top = heap_end;
+    initialized = true;
+  }
+
+  // append an MCB in front of a requested memroy space
+  size = size + sizeof( MCB );
+
+  MCB *smallest_fitting = NULL;
+  long smallest_size = LONG_MAX;
+
+  // scan each mcb from the top to the bottom of the heap
+  //   let cur_mcb point to each mcb you are scanning
+  cur_mcb = (MCB*) heap_top;
+
+  while ( (void*) cur_mcb < heap_end ) {
+  //   if cur_mcb->available and cur_mcb->size fits size and cur_mcb->size is the best size so far
+      if ( cur_mcb->available && cur_mcb->size >= size) {
+  //      temporarily memorize this best size so far and this best mcb so far
+          if (cur_mcb->size < smallest_size) {
+            smallest_fitting = cur_mcb;
+            smallest_size = cur_mcb->size;
+          }    
+        }
+        cur_mcb = (MCB*) ( (long long int) cur_mcb + cur_mcb->size );
+      }
+  // After scan, check the best mcb so far. If it is not null
+  if ( smallest_fitting != NULL ) {
+  //   new_space points to this best mcb so far
+    new_space = (void*)smallest_fitting;
+    smallest_fitting->available = 0;
+  }
+  // Task 3: implement by yourself (up to 20 lines).
+  // no space found yet
+  if ( new_space == NULL ) {
+    // get space from the OS
+    sbrk( size );
+    // new space starts at the old boundary
+    new_space = heap_end;
+    // move heap_end by amount size
+    heap_end = sbrk ( 0 );
+    // initialize cur_mcb with new size
+    cur_mcb = (MCB*)new_space;
+    cur_mcb->size = size;
+    // mark unavailable
+    cur_mcb->available = 0;
+  }
+
+  // new space is after new MCB
+  return (void *)( ( long long int )new_space + sizeof( MCB ) );
+}
