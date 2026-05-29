@@ -17,7 +17,11 @@ void free_( void *dealloc_space ) {
   MCB *mcb;
 
   // locate this partition's mcb address from dealloc_space
-  // Task 4: implement by yourself (just in one line).
+  // long long int ensures 64x (bit) address
+  mcb = (MCB*)( (long long int) dealloc_space - sizeof(MCB) );
+
+  // setting the address of mcb to true essentially allows it to be overwritten on another pass
+  // effectively "freeing" the memory allocated to it
   mcb->available = true;
   return;
 }
@@ -38,16 +42,34 @@ void *malloc_f( long size ) {
 
   // scan each mcb from the top to the bottom of the heap
   //   let cur_mcb point to each mcb you are scanning
-  //   if cur_mcb->available and cur_mcb->size fits size, new_space points to this mcb
+  cur_mcb = (MCB*) heap_top;
+
+  while ( (void*) cur_mcb < heap_end ) {
+  // if cur_mcb->available and cur_mcb->size fits size, new_space points to this mcb
   // Task 1: implement by yourself (up to 15 lines).
+      if ( cur_mcb->available && cur_mcb->size >=size ) {
+      new_space = (void*) cur_mcb;
+      cur_mcb->available = 0;
+      break;
+    }
+    // iterate to next MCB
+    cur_mcb = (MCB*) ( (long long int) cur_mcb + cur_mcb->size );
+  }
 
   // no space found yet
   if ( new_space == NULL ) {
     // get a space from OS
+    sbrk( size );
     // old boundary now becomes new_space, i.e. initialize new_space with heap_end
+    new_space = heap_end;
     // heap_end will go down by size
+    heap_end = sbrk ( 0 );
     // initialize cur_mcb with new_space and size.
+    cur_mcb = (MCB*)new_space;
+    cur_mcb->available = 0;
+    cur_mcb->size = size;
     // Task 2: implement by yourself (up to 5 lines).
+
   }
 
   // new space is after new MCB
@@ -68,19 +90,41 @@ void *malloc_b( long size ) {
   // append an MCB in front of a requested memroy space
   size = size + sizeof( MCB );
 
+  MCB *smallest_fitting = NULL;
+  long smallest_size = LONG_MAX;
+
   // scan each mcb from the top to the bottom of the heap
   //   let cur_mcb point to each mcb you are scanning
-  //   if cur_mcb->available and cur_mcb->size fits size and cur_mcb->size is the best size so far
-  //      temporarily memorize this best size so far and this best mcb so far
-  // After scan, check the best mcb so far. If it is not null
-  //   new_space points to this best mcb so rar
-  // Task 3: implement by yourself (up to 20 lines).
-  
+  cur_mcb = (MCB*) heap_top;
 
+  while ( (void*) cur_mcb < heap_end ) {
+  //   if cur_mcb->available and cur_mcb->size fits size and cur_mcb->size is the best size so far
+      if ( cur_mcb->available && cur_mcb->size >= size) {
+  //      temporarily memorize this best size so far and this best mcb so far
+          if (cur_mcb->size < smallest_size) {
+            smallest_fitting = cur_mcb;
+            smallest_size = cur_mcb->size;
+          }    
+        }
+        cur_mcb = (MCB*) ( (long long int) cur_mcb + cur_mcb->size );
+      }
+  // After scan, check the best mcb so far. If it is not null
+  if ( smallest_fitting != NULL ) {
+  //   new_space points to this best mcb so rar
+    new_space = (void*)smallest_fitting;
+    smallest_fitting->available = 0;
+  }
+  // Task 3: implement by yourself (up to 20 lines).
   // no space found yet
   if ( new_space == NULL ) {
     // The same as Task 2
     // Task 3': Just cut and past the logic from malloc_f to here.
+    sbrk( size );
+    new_space = heap_end;
+    heap_end = sbrk ( 0 );
+    cur_mcb = (MCB*)new_space;
+    cur_mcb->available = 0;
+    cur_mcb->size = size;
   }
 
   // new space is after new MCB
